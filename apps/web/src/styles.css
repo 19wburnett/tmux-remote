@@ -589,23 +589,65 @@ textarea {
   font-size: 12.5px;
 }
 
+/* ---------- segmented control ---------- */
+
+.seg {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  background: var(--bg-elev);
+}
+.seg-btn {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-faint);
+  transition: background 0.15s, color 0.15s;
+}
+.seg-btn.active {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+
 /* ---------- chat view ---------- */
 
 .chat-view {
+  flex: 1;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-family: var(--sans);
-  font-size: 15px;
-  padding: 12px;
+  gap: 10px;
+  padding: 4px 14px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-divider {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+}
+.chat-divider span {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-faint);
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 3px 12px;
 }
 .chat-msg {
   display: flex;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 8px;
 }
 .chat-msg.user {
   justify-content: flex-end;
+  align-items: flex-end;
 }
 .chat-bubble {
   max-width: 86%;
@@ -621,15 +663,54 @@ textarea {
   color: #fff;
   border-bottom-right-radius: 5px;
   font-size: 15px;
+  font-family: var(--sans);
 }
 .agent-bubble {
   background: var(--bg-card);
   border: 1px solid var(--border-soft);
   color: var(--text);
   border-bottom-left-radius: 5px;
+  border-top-left-radius: 5px;
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.5;
+}
+.agent-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  border: 1px solid var(--border-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.agent-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.agent-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px;
+}
+.agent-name {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: capitalize;
+}
+.chat-time {
+  font-size: 10.5px;
+  color: var(--text-faint);
 }
 .cb-line {
   white-space: pre-wrap;
@@ -638,12 +719,34 @@ textarea {
 .cb-line.empty {
   height: 4px;
 }
-.chat-time {
-  font-size: 10.5px;
-  color: var(--text-faint);
-  align-self: flex-end;
-  padding-bottom: 2px;
-  flex-shrink: 0;
+.cb-more {
+  margin-top: 6px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* ---------- embedded terminal tab ---------- */
+
+.terminal-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.term-drawer.embedded {
+  position: static;
+  inset: auto;
+  flex: 1;
+  min-height: 0;
+}
+.term-drawer.embedded .term-bar {
+  padding: 8px 12px;
 }
 
 /* ---------- composer ---------- */

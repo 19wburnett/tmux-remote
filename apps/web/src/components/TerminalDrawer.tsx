@@ -30,7 +30,7 @@ const THEME = {
   brightWhite: '#ffffff',
 };
 
-export function TerminalDrawer({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+export function TerminalDrawer({ sessionId, onClose, embedded = false }: { sessionId: string; onClose: () => void; embedded?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -116,12 +116,14 @@ export function TerminalDrawer({ sessionId, onClose }: { sessionId: string; onCl
   }, [sessionId, subscribeOutput, sendText]);
 
   return (
-    <div className="term-drawer">
+    <div className={`term-drawer${embedded ? ' embedded' : ''}`}>
       <div className="term-bar">
-        <button className="icon-btn" onClick={onClose} aria-label="Close terminal">
-          <IconX />
-        </button>
-        <div className="title">{sessionId}</div>
+        {!embedded && (
+          <button className="icon-btn" onClick={onClose} aria-label="Close terminal">
+            <IconX />
+          </button>
+        )}
+        <div className="title">▦ {sessionId}</div>
         <div className="toggle">
           <label style={{ cursor: 'pointer' }}>Keyboard</label>
           <button
@@ -134,10 +136,12 @@ export function TerminalDrawer({ sessionId, onClose }: { sessionId: string; onCl
         </div>
       </div>
       <div className="term-box" ref={hostRef} />
-      <div className="term-hint">
-        Live pane view · new output streams in automatically
-        {inputMode && <span style={{ color: 'var(--green)' }}>· typing enabled</span>}
-      </div>
+      {!embedded && (
+        <div className="term-hint">
+          Live pane view · new output streams in automatically
+          {inputMode && <span style={{ color: 'var(--green)' }}>· typing enabled</span>}
+        </div>
+      )}
     </div>
   );
 }

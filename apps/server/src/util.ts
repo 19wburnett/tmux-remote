@@ -50,16 +50,48 @@ export function sanitizeAnsi(s: string): string {
     .replace(CSI_RE, (m) => (m.endsWith('m') ? m : ''))
     .replace(CHARSET_RE, '')
     .replace(SIMPLE_ESC_RE, '')
-    .replace(/\r/g, '')
     .replace(/\u0000/g, '');
 }
 
-/** Split a raw output chunk into sanitized lines (trailing newline -> no empty last line). */
+/** Strip SGR (color) sequences and trailing whitespace for plain-text matching. */
+export function stripSgr(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+}
+
+/**
+ * Split a raw output chunk into lines with terminal redraw semantics:
+ * `\r` overwrites from the start of the current line, `\b` deletes the last
+ * char. This keeps in-place spinner/progress redraws from being squashed onto
+ * a single merged line.
+ */
 export function sanitizeLines(raw: string): string[] {
   const cleaned = sanitizeAnsi(raw);
-  const parts = cleaned.split('\n');
-  if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
-  return parts;
+  const lines: string[] = [];
+  let cur = '';
+  let col = 0;
+  for (const ch of cleaned) {
+    if (ch === '\n') {
+      lines.push(cur);
+      cur = '';
+      col = 0;
+    } else if (ch === '\r') {
+      col = 0;
+    } else if (ch === '\b') {
+      if (col > 0) {
+        cur = cur.slice(0, -1);
+        col -= 1;
+      }
+    } else {
+      if (col < cur.length) {
+        cur = cur.slice(0, col) + ch + cur.slice(col + 1);
+      } else {
+        cur += ch;
+      }
+      col += 1;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 
 export function nowSec(): number {

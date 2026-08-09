@@ -18,7 +18,8 @@ import { TmuxAdapter, type TmuxPaneInfo, type TmuxTarget } from './tmux.js';
 import { AGENT_COMMANDS, classifyPane, deriveLabel, isKnownAgent, paneKey } from './detect.js';
 import { discoverGit } from './git.js';
 import { computeStatus } from './status.js';
-import { sanitizeLines } from './util.js';
+import { sanitizeLines, stripSgr } from './util.js';
+import { cleanChatLines } from './clean.js';
 
 export interface SessionBus {
   sessions(sessions: SessionInfo[], approvals: ApprovalRequest[]): void;
@@ -178,7 +179,7 @@ export class SessionManager {
     const seq = buffer.length;
 
     const displayName = deriveLabel(pane, agentType, meta.displayName);
-    const seedAgentLines = seedLines.slice(-300);
+    const seedAgentLines = cleanChatLines(seedLines.slice(-300)).slice(-140);
     const firstAgent: ChatMessage | undefined =
       seedAgentLines.length > 0
         ? { id: randomUUID(), role: 'agent', ts: Date.now(), lines: seedAgentLines }
@@ -294,7 +295,7 @@ export class SessionManager {
       const newLines = this.tailLog(ms);
       const gotOutput = newLines.length > 0;
       if (gotOutput) {
-        const chatLines = this.suppressEcho(ms, newLines);
+        const chatLines = cleanChatLines(this.suppressEcho(ms, newLines));
         if (chatLines.length) this.appendAgentChat(ms, chatLines);
         ms.lastActivityAt = Date.now();
         const out: TranscriptLine[] = [];
@@ -377,7 +378,7 @@ export class SessionManager {
   }
 
   private stripAnsiPlain(text: string): string {
-    return text.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+    return stripSgr(text);
   }
 
   /**

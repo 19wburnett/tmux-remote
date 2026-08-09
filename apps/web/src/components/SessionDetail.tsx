@@ -20,7 +20,7 @@ import {
 export function SessionDetail() {
   const { sessions, selectedId, selectSession, chat, command, patchSession, archive, kill, deleteRecord, setNotice } = useApp();
   const [quickKeysOpen, setQuickKeysOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [view, setView] = useState<'chat' | 'terminal'>('chat');
   const [moreOpen, setMoreOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
 
@@ -46,7 +46,7 @@ export function SessionDetail() {
           onBack={() => selectSession(null)}
           right={
             <>
-              <button className="icon-btn" onClick={() => setTerminalOpen(true)} aria-label="Terminal">
+              <button className="icon-btn" onClick={() => setView('terminal')} aria-label="Terminal">
                 <IconTerminal />
               </button>
               <button className="icon-btn" onClick={() => setMoreOpen(true)} aria-label="Actions">
@@ -65,7 +65,24 @@ export function SessionDetail() {
           </span>
         </div>
 
+        <div className="seg">
+          <button className={`seg-btn${view === 'chat' ? ' active' : ''}`} onClick={() => setView('chat')}>
+            💬 Chat
+          </button>
+          <button className={`seg-btn${view === 'terminal' ? ' active' : ''}`} onClick={() => setView('terminal')}>
+            ▦ Terminal
+          </button>
+        </div>
+
         <ApprovalBanner sessionId={session.id} />
+
+        {view === 'chat' ? (
+          <ChatView messages={chat[session.id] ?? []} agentType={session.agentType} />
+        ) : (
+          <div className="terminal-pane">
+            <TerminalDrawer sessionId={session.id} embedded onClose={() => setView('chat')} />
+          </div>
+        )}
 
         <div className="quick-actions">
           <button className="qa-chip" onClick={() => void command('interrupt')}>
@@ -80,7 +97,7 @@ export function SessionDetail() {
           <button className="qa-chip" onClick={() => setQuickKeysOpen((v) => !v)}>
             ⌨ Keys
           </button>
-          <button className="qa-chip" onClick={() => setTerminalOpen(true)}>
+          <button className="qa-chip" onClick={() => setView('terminal')}>
             ▦ Terminal
           </button>
           <button className="qa-chip danger" onClick={() => setMoreOpen(true)}>
@@ -88,13 +105,9 @@ export function SessionDetail() {
           </button>
         </div>
 
-        <ChatView messages={chat[session.id] ?? []} />
-
         {quickKeysOpen && <QuickKeysBar onClose={() => setQuickKeysOpen(false)} />}
-        <Composer onOpenKeys={() => setQuickKeysOpen(true)} onOpenTerminal={() => setTerminalOpen(true)} />
+        <Composer onOpenKeys={() => setQuickKeysOpen(true)} onOpenTerminal={() => setView('terminal')} />
       </div>
-
-      {terminalOpen && <TerminalDrawer sessionId={session.id} onClose={() => setTerminalOpen(false)} />}
 
       {moreOpen && (
         <Sheet title="Session actions" onClose={() => setMoreOpen(false)}>
