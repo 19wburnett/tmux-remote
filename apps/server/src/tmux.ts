@@ -30,6 +30,10 @@ export interface TmuxPaneInfo {
   height: number;
   active: boolean;
   pid: number;
+  title: string;
+  windowIndex: number;
+  windowName: string;
+  sessionName: string;
 }
 
 export interface NewSessionInput {
@@ -41,8 +45,54 @@ export interface NewSessionInput {
 const SESSION_FMT =
   '#{session_id}|#{session_name}|#{session_windows}|#{session_created}|#{session_attached}';
 const WINDOW_FMT = '#{window_id}|#{window_index}|#{window_name}|#{window_active}';
+const PANE_SEP = '\u001f';
 const PANE_FMT =
-  '#{pane_id}|#{pane_index}|#{pane_current_command}|#{pane_width}|#{pane_height}|#{pane_active}|#{pane_pid}';
+  '#{pane_id}' + PANE_SEP +
+  '#{pane_index}' + PANE_SEP +
+  '#{pane_current_command}' + PANE_SEP +
+  '#{pane_width}' + PANE_SEP +
+  '#{pane_height}' + PANE_SEP +
+  '#{pane_active}' + PANE_SEP +
+  '#{pane_pid}' + PANE_SEP +
+  '#{pane_title}' + PANE_SEP +
+  '#{window_index}' + PANE_SEP +
+  '#{window_name}' + PANE_SEP +
+  '#{session_name}';
+
+function parsePanes(stdout: string): TmuxPaneInfo[] {
+  return stdout
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [
+        paneId,
+        index,
+        currentCommand,
+        width,
+        height,
+        active,
+        pid,
+        title,
+        windowIndex,
+        windowName,
+        sessionName,
+      ] = line.split(PANE_SEP);
+      return {
+        paneId,
+        index: Number(index),
+        currentCommand,
+        width: Number(width),
+        height: Number(height),
+        active: active === '1',
+        pid: Number(pid),
+        title: title ?? '',
+        windowIndex: Number(windowIndex),
+        windowName: windowName ?? '',
+        sessionName: sessionName ?? '',
+      };
+    });
+}
 
 /**
  * Thin adapter around the `tmux` CLI. This is the only module allowed to
@@ -123,22 +173,19 @@ export class TmuxAdapter {
     const target = window !== undefined ? `${session}:${window}` : session;
     const r = await this.tmux(['list-panes', '-t', target, '-F', PANE_FMT]);
     if (r.code !== 0) return [];
-    return r.stdout
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const [paneId, index, currentCommand, width, height, active, pid] = line.split('|');
-        return {
-          paneId,
-          index: Number(index),
-          currentCommand,
-          width: Number(width),
-          height: Number(height),
-          active: active === '1',
-          pid: Number(pid),
-        };
-      });
+    return parsePanes(r.stdout);
+  }
+
+  /** All panes across all sessions (used for agentic-session discovery). */
+  async listAllPanes(): Promise<TmuxPaneInfo[]> {
+    const r = await this.tmux(['list-panes', '-a', '-F', PANE_FMT]);
+    if (r.code !== 0) {
+      if (r.stderr.includes('no server running') || r.stderr.includes('failed to connect')) {
+        return [];
+      }
+      return [];
+    }
+    return parsePanes(r.stdout);
   }
 
   async capturePane(target: TmuxTarget, scrollback?: number): Promise<string> {
@@ -173,6 +220,10 @@ export class TmuxAdapter {
 
   async killSession(name: string): Promise<void> {
     await this.tmux(['kill-session', '-t', name]);
+  }
+
+  async killPane(target: TmuxTarget): Promise<void> {
+    await this.tmux(['kill-pane', '-t', this.targetString(target)]);
   }
 
   async renameSession(oldName: string, newName: string): Promise<void> {

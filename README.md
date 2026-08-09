@@ -15,8 +15,9 @@ phone (PWA-ish) ──HTTP/WS──▶ claude-remote server ──tmux CLI──
 
 ## Features (MVP)
 
-- **Session inbox** — every tmux session/window appears as a card with status,
-  project · branch · worktree, agent type, last-output preview and recency.
+- **Session inbox** — every agentic tmux pane appears as its own card with
+  live status, project · branch · worktree, agent type, last-output preview and
+  recency. Sidebar/utility panes and idle plain-shell panes are filtered out.
   Sessions needing you float to the top; pin favorites; filter by running /
   waiting / failed / pinned / project; full-text search.
 - **Session detail** — transcript of the agent's output, live-streamed over
@@ -76,13 +77,17 @@ pnpm dev          # server on :8787 (API/WS) + vite dev server on :5173
 
 ## Managing agents
 
-`claude-remote` treats **one tmux session as one logical agent** (the active
-window's active pane). Everything you do in the app runs `tmux` commands under
-the hood, so your panes behave exactly as if you'd typed at the terminal.
+`claude-remote` treats **one agentic tmux pane as one logical session** (the
+pane running an agent such as `claude`, `codex`, or `opencode`). Panes that are
+narrow sidebar dashboards or idle shells are ignored. Each card is bound to its
+pane, and everything you do in the app runs `tmux` commands under the hood, so
+your panes behave exactly as if you'd typed at the terminal.
 
 - Start an agent: `+` in the app → name, working dir, command (e.g. `claude`).
-- Or just `tmux new-session -d -s myagent` on the desktop — it appears in the
-  app within ~1s with branch/worktree auto-discovered.
+  The app attaches to the main pane (the sidebar is skipped if your tmux config
+  adds one).
+- Or just run an agent in a tmux pane on the desktop — it appears in the app
+  within ~1s with branch/worktree auto-discovered and a live status title.
 - To surface an approval prompt in the app, have your agent print
   `[APPROVAL_REQUIRED] ...` — the app then shows Approve / Reject.
 - From the desktop, attach as always: `tmux attach -t myagent` (see
@@ -138,6 +143,6 @@ See `ARCHITECTURE.md` for the design.
 | `/rename <name>` | rename the display title |
 | `/pin` `/unpin` | pin / unpin the session |
 | `/archive` | hide the session |
-| `/kill` | kill the tmux session |
+| `/kill` | kill the pane / agent |
 | `/keys` | open the quick-keys bar |
 | `/terminal` | open the live terminal drawer |

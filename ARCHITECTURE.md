@@ -42,8 +42,12 @@ lives here. No raw tmux strings appear elsewhere.
 
 Key design points:
 
-- **One agent = one tmux session.** The app tracks the session's active
-  window/pane; if you switch windows, the app re-targets the active pane.
+- **One agent = one tmux pane.** `SessionManager` enumerates every pane across
+  all sessions (`list-panes -a`) and classifies each one: panes running agent
+  binaries (`claude`, `codex`, `opencode`, …) become sessions; narrow sidebar
+  dashboards and idle plain-shell panes are ignored. Each card is bound to its
+  pane address (`session.window.pane`), which is stable while tmux runs.
+  Window titles are used as smart labels (status glyphs are stripped).
 - **Output capture** uses `tmux pipe-pane` writing each pane's output to a
   file in the data dir, then a per-second `tail` reads the delta. This gives a
   transcript that survives server restarts. `pipe-pane -o` toggles, so the
@@ -57,9 +61,10 @@ Key design points:
 
 `SessionManager.tick()` runs every `POLL_MS`:
 
-1. `list-sessions` → adopt new sessions, mark vanished ones `closed`.
-2. Per session: re-target active pane if needed, tail the pipe log, capture the
-   screen, run status heuristics, scan for `[APPROVAL_REQUIRED]` markers.
+1. `list-panes -a` → classify panes, adopt new agentic ones (or any pane with
+   a stored record, e.g. just-created sessions), mark vanished panes `closed`.
+2. Per pane: tail the pipe log, capture the screen, run status heuristics, scan
+   for `[APPROVAL_REQUIRED]` markers, refresh the smart title label.
 3. Broadcast: full session list when it changes, `session-updated` per session,
    `output` deltas only to clients subscribed to that session.
 
@@ -120,5 +125,5 @@ ANSI rendering for the transcript is a small client-side SGR parser
 - No Docker, no cloud services, no build step beyond `tsc`/`vite`.
 - Approval detection is marker/heuristic-based, not a real permission hook into
   any agent runtime.
-- One app-session = one tmux session's active pane; multi-window agents map to
-  window switching within a session.
+- One app-session = one agentic tmux pane; multi-pane dashboards are filtered
+  out rather than shown as sessions.

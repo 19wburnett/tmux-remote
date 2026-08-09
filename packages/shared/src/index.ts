@@ -9,10 +9,14 @@ export type SessionStatus =
 export type FilterKey = 'all' | 'running' | 'waiting' | 'failed' | 'pinned' | 'archived';
 
 export interface SessionInfo {
-  /** Stable identity — the tmux session name. */
+  /** Stable identity — the tmux pane key (`session.window.pane`). */
   id: string;
-  /** tmux session name (equals id unless renamed via tmux). */
+  /** tmux session name the pane lives in. */
   tmuxSession: string;
+  /** Window index within the tmux session. */
+  window?: number;
+  /** Pane index within the window. */
+  pane?: number;
   /** User-facing title shown on cards. */
   displayName: string;
   status: SessionStatus;
@@ -135,7 +139,7 @@ export const SLASH_COMMANDS = [
   { name: '/pin', description: 'Pin this session to the top', group: 'session' },
   { name: '/unpin', description: 'Remove the pin', group: 'session' },
   { name: '/archive', description: 'Archive this session', group: 'session' },
-  { name: '/kill', description: 'Kill the tmux session', group: 'session', confirm: true },
+  { name: '/kill', description: 'Kill this pane/agent', group: 'session', confirm: true },
   { name: '/keys', description: 'Open the quick-keys bar', group: 'ui' },
   { name: '/terminal', description: 'Open the live terminal panel', group: 'ui' },
 ] as const;

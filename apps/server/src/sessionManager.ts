@@ -13,10 +13,11 @@ import type {
 } from '@claude-remote/shared';
 import type { AppConfig } from './config.js';
 import type { Store, SessionRecord } from './store.js';
-import { TmuxAdapter, type TmuxPaneInfo, type TmuxTarget, type TmuxWindowInfo } from './tmux.js';
+import { TmuxAdapter, type TmuxPaneInfo, type TmuxTarget } from './tmux.js';
+import { AGENT_COMMANDS, classifyPane, deriveLabel, isKnownAgent, paneKey } from './detect.js';
 import { discoverGit } from './git.js';
 import { computeStatus } from './status.js';
-import { nowSec, sanitizeLines } from './util.js';
+import { sanitizeLines } from './util.js';
 
 export interface SessionBus {
   sessions(sessions: SessionInfo[], approvals: ApprovalRequest[]): void;
@@ -45,6 +46,7 @@ interface ManagedSession {
   lastApprovalSeq: number;
   gitCheckedAt: number;
   agentCheckedAt: number;
+  lastTitle?: string;
   lastError?: string;
 }
 
@@ -75,9 +77,6 @@ export class SessionManager {
   ) {}
 
   async start(): Promise<void> {
-    for (const rec of this.store.listSessions()) {
-      if (rec.closed) continue;
-    }
     await this.tick();
     this.timer = setInterval(() => void this.tick(), this.config.pollMs);
   }
@@ -90,15 +89,23 @@ export class SessionManager {
     if (this.refreshing) return;
     this.refreshing = true;
     try {
-      const tmuxSessions = await this.tmux.listSessions();
-      const liveNames = new Set(tmuxSessions.map((s) => s.name));
-      for (const s of tmuxSessions) {
-        if (!this.sessions.has(s.name)) {
-          await this.adopt(s.name, s.created);
+      const panes = await this.tmux.listAllPanes();
+      const live = new Map<string, TmuxPaneInfo>();
+      for (const p of panes) live.set(paneKey(p), p);
+
+      for (const p of panes) {
+        const key = paneKey(p);
+        if (this.sessions.has(key)) continue;
+        const kind = classifyPane(p);
+        const hasRecord = this.store.getSession(key) !== undefined;
+        if (kind === 'agent' || hasRecord) {
+          await this.adoptPane(p);
         }
       }
+
       for (const [id, ms] of this.sessions) {
-        if (!liveNames.has(id)) {
+        const pane = live.get(id);
+        if (!pane) {
           if (!ms.info.closed) {
             ms.info.closed = true;
             ms.info.status = 'done';
@@ -108,7 +115,7 @@ export class SessionManager {
           }
           continue;
         }
-        await this.refresh(ms);
+        await this.refresh(ms, pane);
       }
       this.maybeBroadcastList();
     } catch (err) {
@@ -118,14 +125,18 @@ export class SessionManager {
     }
   }
 
-  private async adopt(name: string, createdSec: number): Promise<void> {
-    const existing = this.store.getSession(name);
+  private async adoptPane(pane: TmuxPaneInfo): Promise<void> {
+    const key = paneKey(pane);
+    const existing = this.store.getSession(key);
+    const cmd = (pane.currentCommand || '').toLowerCase();
+    const agentType = existing?.agentType ?? (AGENT_COMMANDS.has(cmd) ? cmd : undefined);
+
     const meta: SessionRecord = {
-      id: name,
+      id: key,
       tags: existing?.tags ?? [],
       pinned: existing?.pinned ?? false,
       archived: existing?.archived ?? false,
-      createdAt: existing?.createdAt ?? (createdSec ? createdSec * 1000 : Date.now()),
+      createdAt: existing?.createdAt ?? Date.now(),
       closed: false,
     };
     if (existing) {
@@ -139,12 +150,15 @@ export class SessionManager {
       meta.cwd = existing.cwd;
     }
 
-    const { winIdx, pane } = await this.resolvePane(name);
-    const target = { session: name, window: winIdx, pane: pane?.index ?? 0 };
+    const target: TmuxTarget = {
+      session: pane.sessionName,
+      window: pane.windowIndex,
+      pane: pane.index,
+    };
     const cwd = meta.cwd ?? (await this.tmux.paneCurrentPath(target));
 
-    const logPath = this.paneLogPath(name, winIdx, pane?.index ?? 0);
-    await this.ensurePipe(target, logPath, pane?.paneId);
+    const logPath = this.paneLogPath(key);
+    await this.ensurePipe(target, logPath, pane.paneId);
 
     const raw = await this.tmux.capturePane(target, this.config.ringBufferSize);
     const seedLines = sanitizeLines(raw);
@@ -155,17 +169,20 @@ export class SessionManager {
     }));
     const seq = buffer.length;
 
+    const displayName = deriveLabel(pane, agentType, meta.displayName);
     const ms: ManagedSession = {
       info: {
-        id: name,
-        tmuxSession: name,
-        displayName: meta.displayName ?? name,
+        id: key,
+        tmuxSession: pane.sessionName,
+        window: pane.windowIndex,
+        pane: pane.index,
+        displayName,
         status: 'unknown',
         project: meta.project,
         branch: meta.branch,
         worktree: meta.worktree,
         cwd,
-        agentType: meta.agentType,
+        agentType,
         preview: previewFrom(seedLines),
         lastActivityAt: Date.now(),
         createdAt: meta.createdAt,
@@ -173,15 +190,15 @@ export class SessionManager {
         archived: meta.archived,
         needsApproval: false,
         needsInput: false,
-        attached: false,
-        windows: 0,
+        attached: true,
+        windows: 1,
         tags: meta.tags ?? [],
         closed: false,
       },
       meta,
       target,
-      paneId: pane?.paneId,
-      panePid: pane?.pid,
+      paneId: pane.paneId,
+      panePid: pane.pid,
       logPath,
       pipeOn: true,
       fileOffset: this.fileSize(logPath),
@@ -194,50 +211,34 @@ export class SessionManager {
       lastApprovalSeq: 0,
       gitCheckedAt: 0,
       agentCheckedAt: 0,
+      lastTitle: pane.title,
     };
-    this.sessions.set(name, ms);
+    this.sessions.set(key, ms);
 
     if (this.config.discoverGit) void this.refreshGit(ms);
-    void this.refreshAgentType(ms);
+    void this.refreshAgentType(ms, pane);
     this.bus.sessionUpdated(ms.info);
   }
 
-  private async resolvePane(
-    name: string,
-  ): Promise<{ winIdx: number; pane?: TmuxPaneInfo }> {
+  private async adoptPaneForSession(name: string): Promise<TmuxPaneInfo | undefined> {
     const windows = await this.tmux.listWindows(name);
-    const win = (windows.find((w) => w.active) ?? windows[0]) as TmuxWindowInfo | undefined;
-    if (!win) return { winIdx: 0 };
+    const win = windows[0];
+    if (!win) return undefined;
     const panes = await this.tmux.listPanes(name, win.index);
-    const pane = panes.find((p) => p.active) ?? panes[0];
-    return { winIdx: win.index, pane };
+    if (panes.length === 0) return undefined;
+    // Prefer a pane already running an agent; otherwise the widest pane that
+    // is not the sidebar dashboard (tmux hooks often add a narrow side pane).
+    const agentic = panes.find((p) => classifyPane(p) === 'agent');
+    if (agentic) return agentic;
+    const main = [...panes]
+      .filter((p) => classifyPane(p) !== 'sidebar')
+      .sort((a, b) => b.width - a.width)[0];
+    return main ?? panes[0];
   }
 
-  private async retarget(ms: ManagedSession, winIdx: number, pane: TmuxPaneInfo): Promise<void> {
-    const logPath = this.paneLogPath(ms.info.id, winIdx, pane.index);
-    if (ms.pipeOn && ms.paneId && this.pipeTargets.has(ms.paneId)) {
-      await this.tmux.pipeStop(ms.target);
-      this.pipeTargets.delete(ms.paneId);
-    }
-    ms.target = { session: ms.info.id, window: winIdx, pane: pane.index };
-    ms.paneId = pane.paneId;
-    ms.panePid = pane.pid;
-    ms.logPath = logPath;
-    await this.ensurePipe(ms.target, logPath, pane.paneId);
-    const raw = await this.tmux.capturePane(ms.target, this.config.ringBufferSize);
-    const seedLines = sanitizeLines(raw);
-    ms.buffer = seedLines.map((t, i) => ({ seq: i, ts: Date.now(), text: t }));
-    ms.seq = ms.buffer.length;
-    ms.lastScreen = seedLines;
-    ms.lastScreenHash = seedLines.join('\n');
-    ms.fileOffset = this.fileSize(logPath);
-    ms.lastActivityAt = Date.now();
-    ms.agentCheckedAt = 0;
-  }
-
-  private paneLogPath(session: string, winIdx: number, paneIdx: number): string {
-    const safe = session.replace(/[^a-zA-Z0-9._-]/g, '_');
-    return join(this.config.logDir, `${safe}.${winIdx}.${paneIdx}.log`);
+  private paneLogPath(key: string): string {
+    const safe = key.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return join(this.config.logDir, `${safe}.log`);
   }
 
   private async ensurePipe(target: TmuxTarget, logPath: string, paneId?: string): Promise<void> {
@@ -260,12 +261,19 @@ export class SessionManager {
     }
   }
 
-  private async refresh(ms: ManagedSession): Promise<void> {
+  private async refresh(ms: ManagedSession, pane: TmuxPaneInfo): Promise<void> {
     try {
-      const { winIdx, pane } = await this.resolvePane(ms.info.id);
-      if (pane && pane.paneId && pane.paneId !== ms.paneId) {
-        await this.retarget(ms, winIdx, pane);
+      ms.paneId = pane.paneId;
+      if (pane.pid && pane.pid !== ms.panePid) ms.panePid = pane.pid;
+
+      if (!ms.meta.displayName) {
+        const label = deriveLabel(pane, ms.info.agentType, undefined);
+        if (label !== ms.info.displayName) {
+          ms.info.displayName = label;
+          this.bus.sessionUpdated(ms.info);
+        }
       }
+      ms.lastTitle = pane.title;
 
       const newLines = this.tailLog(ms);
       const gotOutput = newLines.length > 0;
@@ -301,7 +309,7 @@ export class SessionManager {
       }
       if (nowMs - ms.agentCheckedAt > 60_000) {
         ms.agentCheckedAt = nowMs;
-        void this.refreshAgentType(ms);
+        void this.refreshAgentType(ms, pane);
       }
 
       if (!ms.pendingApproval) this.detectApproval(ms);
@@ -410,14 +418,24 @@ export class SessionManager {
     }
   }
 
-  private async refreshAgentType(ms: ManagedSession): Promise<void> {
-    const cmd = ms.panePid ? await this.tmux.getChildrenCommand(ms.panePid) : undefined;
-    const agent = cmd ? this.deriveAgentName(cmd) : undefined;
-    if (agent && ms.info.agentType !== agent && !ms.meta.agentType) {
-      ms.info.agentType = agent;
-      ms.meta.agentType = agent;
-      this.store.upsertSession(ms.meta);
-      this.bus.sessionUpdated(ms.info);
+  private async refreshAgentType(ms: ManagedSession, pane: TmuxPaneInfo): Promise<void> {
+    const cmd = (pane.currentCommand || '').toLowerCase();
+    if (AGENT_COMMANDS.has(cmd)) {
+      if (ms.info.agentType !== cmd && !ms.meta.agentType) {
+        ms.info.agentType = cmd;
+        ms.meta.agentType = cmd;
+        this.store.upsertSession(ms.meta);
+        this.bus.sessionUpdated(ms.info);
+      }
+    } else if (!ms.info.agentType && ms.panePid) {
+      const children = await this.tmux.getChildrenCommand(ms.panePid);
+      const agent = children ? this.deriveAgentName(children) : undefined;
+      if (agent && isKnownAgent(agent) && !ms.meta.agentType) {
+        ms.info.agentType = agent;
+        ms.meta.agentType = agent;
+        this.store.upsertSession(ms.meta);
+        this.bus.sessionUpdated(ms.info);
+      }
     }
     ms.agentCheckedAt = Date.now();
   }
@@ -484,8 +502,11 @@ export class SessionManager {
       cwd: input.cwd,
       command: input.command,
     });
+    const pane = await this.adoptPaneForSession(name);
+    if (!pane) throw new Error('session created but no pane found');
+    const key = paneKey(pane);
     this.store.upsertSession({
-      id: name,
+      id: key,
       project: input.project,
       agentType: input.agentType,
       tags: input.tags ?? [],
@@ -494,9 +515,9 @@ export class SessionManager {
       createdAt: Date.now(),
       launchCommand: input.command,
     });
-    await this.adopt(name, nowSec());
+    await this.adoptPane(pane);
     this.maybeBroadcastList();
-    const info = this.getInfo(name);
+    const info = this.getInfo(key);
     if (!info) throw new Error('session created but not adopted');
     return info;
   }
@@ -563,15 +584,13 @@ export class SessionManager {
 
   async kill(id: string): Promise<void> {
     const ms = this.sessions.get(id);
-    if (ms && ms.info.closed) throw new Error(`session ${id} is already closed`);
-    await this.tmux.killSession(id);
-    if (ms) {
-      ms.info.closed = true;
-      ms.info.status = 'done';
-      ms.meta = { ...ms.meta, closed: true };
-      this.store.upsertSession(ms.meta);
-      this.bus.sessionUpdated(ms.info);
-    }
+    if (!ms || ms.info.closed) throw new Error(`session ${id} is not active`);
+    await this.tmux.killPane(ms.target);
+    ms.info.closed = true;
+    ms.info.status = 'done';
+    ms.meta = { ...ms.meta, closed: true };
+    this.store.upsertSession(ms.meta);
+    this.bus.sessionUpdated(ms.info);
   }
 
   async patch(id: string, input: SessionPatchInput): Promise<SessionInfo> {

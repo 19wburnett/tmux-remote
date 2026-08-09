@@ -39,7 +39,6 @@ export function SessionDetail() {
   const infoLine = [session.project, session.branch, session.worktree, session.cwd]
     .filter(Boolean)
     .join('  ·  ');
-
   return (
     <>
       <div className="detail">
@@ -62,7 +61,10 @@ export function SessionDetail() {
         <div className="detail-meta">
           <span className={`status-dot ${session.status}`} />
           <span className="status-label">{statusLabel(session.status)}</span>
-          <span className="info-line">{infoLine || session.tmuxSession}</span>
+          <span className="info-line">
+            {infoLine ||
+              `tmux ${session.tmuxSession}${session.window !== undefined ? `:${session.window}` : ''}${session.pane !== undefined ? `.${session.pane}` : ''}`}
+          </span>
         </div>
 
         <ApprovalBanner sessionId={session.id} />
@@ -126,11 +128,11 @@ export function SessionDetail() {
             className="sheet-row danger"
             onClick={() => {
               setMoreOpen(false);
-              if (window.confirm(`Kill tmux session “${session.id}”?`)) void kill();
+              if (window.confirm(`Kill pane “${session.displayName}”? (tmux pane ${session.id})`)) void kill();
             }}
           >
             <span className="icon"><IconTrash width={17} height={17} /></span>
-            Kill tmux session
+            Kill pane / agent
           </button>
           <button
             className="sheet-row danger"

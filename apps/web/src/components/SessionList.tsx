@@ -123,7 +123,7 @@ export function SessionList() {
             <div className="empty">
               <div className="big">▸</div>
               {sessions.length === 0
-                ? 'No tmux sessions found.\nCreate one, or start a tmux session on your desktop.'
+                ? 'No agentic sessions found.\nStart a tmux pane running claude/codex/opencode, or create one here.'
                 : 'Nothing matches this filter.'}
             </div>
           )}
