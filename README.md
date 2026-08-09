@@ -20,9 +20,11 @@ phone (PWA-ish) ──HTTP/WS──▶ claude-remote server ──tmux CLI──
   recency. Sidebar/utility panes and idle plain-shell panes are filtered out.
   Sessions needing you float to the top; pin favorites; filter by running /
   waiting / failed / pinned / project; full-text search.
-- **Session detail** — transcript of the agent's output, live-streamed over
-  WebSocket; status is inferred heuristically (`running` / `waiting` /
-  `needs input` / `error` / `done`).
+- **Session detail** — a Telegram/iMessage-style chat: your messages appear as
+  right-aligned bubbles, the agent's output as left-aligned (colorized)
+  bubbles, live-streamed over WebSocket. Echo of your typed input is
+  suppressed, and agent output is chunked into bubbles. Status is inferred
+  heuristically (`running` / `waiting` / `needs input` / `error` / `done`).
 - **Composer** — multiline chat-style input that sends text or commands into
   the pane. Slash commands: `/status /interrupt /clear /restart /cd /rename
   /pin /unpin /archive /kill /keys /terminal`.

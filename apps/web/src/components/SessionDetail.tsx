@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../provider';
 import { statusLabel } from '../utils';
 import { Header } from './Header';
-import { OutputView } from './OutputView';
+import { ChatView } from './ChatView';
 import { Composer } from './Composer';
 import { QuickKeysBar } from './QuickKeysBar';
 import { TerminalDrawer } from './TerminalDrawer';
@@ -18,7 +18,7 @@ import {
 } from './icons';
 
 export function SessionDetail() {
-  const { sessions, selectedId, selectSession, transcripts, command, patchSession, archive, kill, deleteRecord, setNotice } = useApp();
+  const { sessions, selectedId, selectSession, chat, command, patchSession, archive, kill, deleteRecord, setNotice } = useApp();
   const [quickKeysOpen, setQuickKeysOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -33,8 +33,6 @@ export function SessionDetail() {
       </div>
     );
   }
-
-  const lines = transcripts[session.id] ?? [];
 
   const infoLine = [session.project, session.branch, session.worktree, session.cwd]
     .filter(Boolean)
@@ -90,7 +88,7 @@ export function SessionDetail() {
           </button>
         </div>
 
-        <OutputView lines={lines} />
+        <ChatView messages={chat[session.id] ?? []} />
 
         {quickKeysOpen && <QuickKeysBar onClose={() => setQuickKeysOpen(false)} />}
         <Composer onOpenKeys={() => setQuickKeysOpen(true)} onOpenTerminal={() => setTerminalOpen(true)} />

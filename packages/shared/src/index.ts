@@ -55,6 +55,17 @@ export interface TranscriptLine {
   text: string;
 }
 
+/** One bubble in the chat view. */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'agent';
+  ts: number;
+  /** User messages: the text that was sent. */
+  text?: string;
+  /** Agent messages: raw (ANSI) terminal output lines. */
+  lines?: string[];
+}
+
 /** Payload returned by the HTTP API when listing sessions. */
 export interface SessionListResponse {
   sessions: SessionInfo[];
@@ -126,6 +137,9 @@ export type ServerMessage =
   | { type: 'session-updated'; session: SessionInfo }
   | { type: 'transcript'; sessionId: string; lines: TranscriptLine[]; reset: boolean }
   | { type: 'output'; sessionId: string; lines: TranscriptLine[] }
+  | { type: 'chat'; sessionId: string; messages: ChatMessage[] }
+  | { type: 'chat-user'; sessionId: string; message: ChatMessage }
+  | { type: 'chat-output'; sessionId: string; message: ChatMessage }
   | { type: 'approval'; sessionId: string; pending: boolean; request?: ApprovalRequest }
   | { type: 'error'; message: string };
 

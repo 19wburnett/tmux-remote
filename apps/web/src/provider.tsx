@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type {
   ApprovalRequest,
+  ChatMessage,
   SessionCreateInput,
   SessionInfo,
   SessionPatchInput,
@@ -28,6 +29,7 @@ export interface AppContextValue {
   approvals: ApprovalRequest[];
   selectedId: string | null;
   transcripts: Record<string, TranscriptLine[]>;
+  chat: Record<string, ChatMessage[]>;
   notice: string | null;
   setNotice: (msg: string | null) => void;
   login: (username: string, password: string) => Promise<boolean>;
@@ -59,6 +61,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptLine[]>>({});
+  const [chat, setChat] = useState<Record<string, ChatMessage[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
 
   const clientRef = useRef<RemoteClient | null>(null);
@@ -85,6 +88,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         } else if (msg.type === 'transcript') {
           setTranscripts((prev) => ({ ...prev, [msg.sessionId]: msg.lines }));
+        } else if (msg.type === 'chat') {
+          setChat((prev) => ({ ...prev, [msg.sessionId]: msg.messages }));
+        } else if (msg.type === 'chat-user') {
+          setChat((prev) => ({
+            ...prev,
+            [msg.sessionId]: [...(prev[msg.sessionId] ?? []), msg.message],
+          }));
+        } else if (msg.type === 'chat-output') {
+          setChat((prev) => {
+            const cur = prev[msg.sessionId] ?? [];
+            const idx = cur.findIndex((m) => m.id === msg.message.id);
+            if (idx === -1) return { ...prev, [msg.sessionId]: [...cur, msg.message] };
+            const next = [...cur];
+            next[idx] = msg.message;
+            return { ...prev, [msg.sessionId]: next };
+          });
         } else if (msg.type === 'output') {
           setTranscripts((prev) => {
             const cur = prev[msg.sessionId] ?? [];
@@ -175,6 +194,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSessions([]);
     setApprovals([]);
     setTranscripts({});
+    setChat({});
     setSelectedId(null);
   }, []);
 
@@ -311,6 +331,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvals,
       selectedId,
       transcripts,
+      chat,
       notice,
       setNotice,
       login,
@@ -339,6 +360,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvals,
       selectedId,
       transcripts,
+      chat,
       notice,
       login,
       logout,

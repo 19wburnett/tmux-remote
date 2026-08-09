@@ -64,9 +64,21 @@ Key design points:
 1. `list-panes -a` → classify panes, adopt new agentic ones (or any pane with
    a stored record, e.g. just-created sessions), mark vanished panes `closed`.
 2. Per pane: tail the pipe log, capture the screen, run status heuristics, scan
-   for `[APPROVAL_REQUIRED]` markers, refresh the smart title label.
+   for `[APPROVAL_REQUIRED]` markers, refresh the smart title label, and feed
+   new output into the chat transcript.
 3. Broadcast: full session list when it changes, `session-updated` per session,
-   `output` deltas only to clients subscribed to that session.
+   `output` + `chat-output` deltas only to clients subscribed to that session.
+
+### Chat transcript
+
+The server maintains a per-session chat: each `send`/`approve` appends a
+**user** message (right bubble), and the pane's pipe output is chunked into
+**agent** messages (left bubbles). Echo of your own typed input is suppressed —
+the first transcript line that equals (or ends with) the just-sent text is
+dropped/trimmed — so the agent bubble doesn't repeat your message. New agent
+bubbles are started after each user send or after an ~8s output gap, giving a
+natural Telegram-like cadence. The raw transcript is still kept for the
+`xterm.js` terminal drawer.
 
 ### Status heuristics
 

@@ -3,6 +3,7 @@ import { openSync, readSync, closeSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type {
   ApprovalRequest,
+  ChatMessage,
   CommandInput,
   KeysInput,
   SendInput,
@@ -24,6 +25,9 @@ export interface SessionBus {
   sessionUpdated(session: SessionInfo): void;
   output(sessionId: string, lines: TranscriptLine[]): void;
   transcript(sessionId: string, lines: TranscriptLine[]): void;
+  chat(sessionId: string, messages: ChatMessage[]): void;
+  chatUser(sessionId: string, message: ChatMessage): void;
+  chatOutput(sessionId: string, message: ChatMessage): void;
   approval(sessionId: string, pending: boolean, request?: ApprovalRequest): void;
   error(message: string): void;
 }
@@ -48,6 +52,10 @@ interface ManagedSession {
   agentCheckedAt: number;
   lastTitle?: string;
   lastError?: string;
+  chat: ChatMessage[];
+  currentAgentId?: string;
+  chatLastAppendAt: number;
+  echoPending?: string;
 }
 
 function shq(s: string): string {
@@ -170,6 +178,11 @@ export class SessionManager {
     const seq = buffer.length;
 
     const displayName = deriveLabel(pane, agentType, meta.displayName);
+    const seedAgentLines = seedLines.slice(-300);
+    const firstAgent: ChatMessage | undefined =
+      seedAgentLines.length > 0
+        ? { id: randomUUID(), role: 'agent', ts: Date.now(), lines: seedAgentLines }
+        : undefined;
     const ms: ManagedSession = {
       info: {
         id: key,
@@ -212,6 +225,9 @@ export class SessionManager {
       gitCheckedAt: 0,
       agentCheckedAt: 0,
       lastTitle: pane.title,
+      chat: firstAgent ? [firstAgent] : [],
+      currentAgentId: firstAgent?.id,
+      chatLastAppendAt: Date.now(),
     };
     this.sessions.set(key, ms);
 
@@ -278,6 +294,8 @@ export class SessionManager {
       const newLines = this.tailLog(ms);
       const gotOutput = newLines.length > 0;
       if (gotOutput) {
+        const chatLines = this.suppressEcho(ms, newLines);
+        if (chatLines.length) this.appendAgentChat(ms, chatLines);
         ms.lastActivityAt = Date.now();
         const out: TranscriptLine[] = [];
         for (const text of newLines) {
@@ -356,6 +374,65 @@ export class SessionManager {
     } finally {
       closeSync(fd);
     }
+  }
+
+  private stripAnsiPlain(text: string): string {
+    return text.replace(/\x1b\[[0-9;]*m/g, '').trimEnd();
+  }
+
+  /**
+   * Drop the pane's echo of a just-sent user message from the transcript so it
+   * doesn't also appear inside the agent's bubble. Only the first matching
+   * line is treated as echo (`prompt> hello` and `hello` are both handled).
+   */
+  private suppressEcho(ms: ManagedSession, lines: string[]): string[] {
+    const t = ms.echoPending;
+    if (!t) return lines;
+    const out: string[] = [];
+    let consumed = false;
+    for (const line of lines) {
+      if (!consumed) {
+        const plain = this.stripAnsiPlain(line);
+        if (plain === t) {
+          consumed = true;
+          continue;
+        }
+        if (plain.endsWith(t) && plain.length > t.length) {
+          out.push(line.slice(0, line.length - t.length));
+          consumed = true;
+          continue;
+        }
+      }
+      out.push(line);
+    }
+    if (consumed) ms.echoPending = undefined;
+    return out;
+  }
+
+  private appendAgentChat(ms: ManagedSession, lines: string[]): void {
+    let msg = ms.chat.find((m) => m.id === ms.currentAgentId && m.role === 'agent');
+    const newBubble = !msg || Date.now() - ms.chatLastAppendAt > 8000;
+    if (!msg || newBubble) {
+      msg = { id: randomUUID(), role: 'agent', ts: Date.now(), lines: [] };
+      ms.chat.push(msg);
+      ms.currentAgentId = msg.id;
+    }
+    for (const l of lines) {
+      if (msg.lines!.length >= this.config.ringBufferSize) break;
+      msg.lines!.push(l);
+    }
+    ms.chatLastAppendAt = Date.now();
+    if (ms.chat.length > 500) ms.chat.shift();
+    this.bus.chatOutput(ms.info.id, msg);
+  }
+
+  private noteUserSend(ms: ManagedSession, text: string, ts = Date.now()): void {
+    const msg: ChatMessage = { id: randomUUID(), role: 'user', ts, text };
+    ms.chat.push(msg);
+    if (ms.chat.length > 500) ms.chat.shift();
+    ms.currentAgentId = undefined;
+    ms.echoPending = text;
+    this.bus.chatUser(ms.info.id, msg);
   }
 
   private detectApproval(ms: ManagedSession): void {
@@ -482,6 +559,10 @@ export class SessionManager {
     return this.sessions.get(id)?.lastScreen ?? [];
   }
 
+  getChat(id: string): ChatMessage[] {
+    return this.sessions.get(id)?.chat ?? [];
+  }
+
   private require(id: string): ManagedSession {
     const ms = this.sessions.get(id);
     if (!ms) throw new Error(`session ${id} not found`);
@@ -525,6 +606,7 @@ export class SessionManager {
   async send(id: string, input: SendInput): Promise<void> {
     const ms = this.require(id);
     await this.tmux.sendText(ms.target, input.text, input.enter !== false);
+    this.noteUserSend(ms, input.text);
   }
 
   async keys(id: string, input: KeysInput): Promise<void> {
@@ -574,6 +656,7 @@ export class SessionManager {
     const pending = ms.pendingApproval;
     const response = approve ? this.config.approveResponse : this.config.rejectResponse;
     await this.tmux.sendText(ms.target, response, true);
+    this.noteUserSend(ms, response);
     if (pending) this.store.markApprovalResolved(pending.id);
     ms.pendingApproval = undefined;
     ms.info.needsApproval = false;

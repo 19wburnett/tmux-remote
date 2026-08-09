@@ -120,7 +120,8 @@ export function Composer({ onOpenKeys, onOpenTerminal }: ComposerProps) {
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    const isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13;
+    if (isEnter && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void send();
     }

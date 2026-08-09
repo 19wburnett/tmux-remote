@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server } from 'node:http';
 import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
-import type { ApprovalRequest, ClientMessage, SessionInfo, TranscriptLine } from '@claude-remote/shared';
+import type { ApprovalRequest, ChatMessage, ClientMessage, SessionInfo, TranscriptLine } from '@claude-remote/shared';
 import { tokenFromRequest, verifyToken } from './auth.js';
 import type { AppConfig } from './config.js';
 import type { SessionBus, SessionManager } from './sessionManager.js';
@@ -68,6 +68,7 @@ export class WsServer implements SessionBus {
       case 'subscribe':
         client.subscribedSession = msg.sessionId;
         this.send(client, { type: 'transcript', sessionId: msg.sessionId, lines: m.getTranscript(msg.sessionId), reset: true });
+        this.send(client, { type: 'chat', sessionId: msg.sessionId, messages: m.getChat(msg.sessionId) });
         break;
       case 'unsubscribe':
         client.subscribedSession = undefined;
@@ -119,6 +120,30 @@ export class WsServer implements SessionBus {
     for (const c of this.clients) {
       if (c.subscribedSession === sessionId) {
         this.send(c, { type: 'transcript', sessionId, lines, reset: true });
+      }
+    }
+  }
+
+  chat(sessionId: string, messages: ChatMessage[]): void {
+    for (const c of this.clients) {
+      if (c.subscribedSession === sessionId) {
+        this.send(c, { type: 'chat', sessionId, messages });
+      }
+    }
+  }
+
+  chatUser(sessionId: string, message: ChatMessage): void {
+    for (const c of this.clients) {
+      if (c.subscribedSession === sessionId) {
+        this.send(c, { type: 'chat-user', sessionId, message });
+      }
+    }
+  }
+
+  chatOutput(sessionId: string, message: ChatMessage): void {
+    for (const c of this.clients) {
+      if (c.subscribedSession === sessionId) {
+        this.send(c, { type: 'chat-output', sessionId, message });
       }
     }
   }

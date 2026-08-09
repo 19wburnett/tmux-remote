@@ -589,6 +589,63 @@ textarea {
   font-size: 12.5px;
 }
 
+/* ---------- chat view ---------- */
+
+.chat-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 15px;
+  padding: 12px;
+}
+.chat-msg {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.chat-msg.user {
+  justify-content: flex-end;
+}
+.chat-bubble {
+  max-width: 86%;
+  border-radius: 16px;
+  padding: 8px 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.user-bubble {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  border-bottom-right-radius: 5px;
+  font-size: 15px;
+}
+.agent-bubble {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  border-bottom-left-radius: 5px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.cb-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cb-line.empty {
+  height: 4px;
+}
+.chat-time {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  align-self: flex-end;
+  padding-bottom: 2px;
+  flex-shrink: 0;
+}
+
 /* ---------- composer ---------- */
 
 .composer-wrap {
