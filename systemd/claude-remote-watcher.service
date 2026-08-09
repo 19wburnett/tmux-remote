@@ -1,0 +1,6 @@
+[Unit]
+Description=claude-remote health watcher (oneshot)
+
+[Service]
+Type=oneshot
+ExecStart=%h/claude-remote/scripts/healthcheck.sh

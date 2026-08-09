@@ -1,0 +1,21 @@
+{
+  "name": "claude-remote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "postinstall": "pnpm --filter @claude-remote/shared build",
+    "build": "pnpm -r build",
+    "dev": "concurrently -n server,web -c blue,green \"pnpm --filter @claude-remote/server dev\" \"pnpm --filter @claude-remote/web dev\"",
+    "start": "node apps/server/dist/index.js",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec rm -rf dist .vite"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

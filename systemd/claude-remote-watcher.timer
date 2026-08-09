@@ -1,0 +1,10 @@
+[Unit]
+Description=Run claude-remote health check periodically
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+Unit=claude-remote-watcher.service
+
+[Install]
+WantedBy=timers.target

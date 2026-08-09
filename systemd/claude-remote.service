@@ -1,0 +1,20 @@
+[Unit]
+Description=claude-remote — tmux coding-agent control server
+Documentation=https://github.com/19wburnett/tmux-remote
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.claude-remote/env
+WorkingDirectory=%h/claude-remote
+ExecStart=/usr/bin/node apps/server/dist/index.js
+Restart=on-failure
+RestartSec=3
+# Hardening — note: no PrivateTmp, the service must reach the tmux server socket.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=%h/.claude-remote %h/claude-remote/apps/server/dist
+ProtectHome=read-only
+
+[Install]
+WantedBy=default.target
