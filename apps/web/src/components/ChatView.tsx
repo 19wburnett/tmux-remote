@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import type { ChatMessage } from '@claude-remote/shared';
+import type { ChatBlock, ChatMessage } from '@claude-remote/shared';
 import { ansiToSegments } from '../ansi';
 
 const COLLAPSE_AT = 14;
@@ -24,6 +24,104 @@ function time(ts: number): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+/** Strip the agent's leading prose glyph (● / ✳ / etc.) so text reads cleanly. */
+const LEAD_GLYPH_RE = /^[●✳✦✻✢*❯»•·]\s*/;
+
+function AnsiText({ text }: { text: string }) {
+  const segs = ansiToSegments(text);
+  return (
+    <>
+      {segs.map((s, j) => (
+        <span key={j} style={s.style}>
+          {s.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function TextBlock({ block }: { block: Extract<ChatBlock, { kind: 'text' }> }) {
+  return (
+    <div className="cc-text">
+      {block.lines.map((raw, i) => {
+        const plain = raw.replace(LEAD_GLYPH_RE, '');
+        if (!plain.trim()) return null;
+        return (
+          <div key={i} className="cc-text-line">
+            <AnsiText text={plain} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const ThinkingBlock = memo(function ThinkingBlock({
+  block,
+}: {
+  block: Extract<ChatBlock, { kind: 'thinking' }>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`cc-thinking${open ? ' open' : ''}`}>
+      <button className="cc-thinking-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="cc-thinking-glyph" aria-hidden>
+          ⟳
+        </span>
+        <span className="cc-thinking-title">{block.title || 'Thinking…'}</span>
+        <span className="cc-chev" aria-hidden>
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open && (
+        <div className="cc-thinking-body">
+          {block.lines.map((raw, i) => {
+            if (!raw.trim()) return null;
+            return (
+              <div key={i} className="cc-line">
+                <AnsiText text={raw} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
+const ToolBlock = memo(function ToolBlock({
+  block,
+}: {
+  block: Extract<ChatBlock, { kind: 'tool' }>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`cc-tool${open ? ' open' : ''}`}>
+      <button className="cc-tool-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="cc-tool-glyph" aria-hidden>
+          ⌘
+        </span>
+        <span className="cc-tool-title">{block.title || 'Shell'}</span>
+        <span className="cc-chev" aria-hidden>
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open && (
+        <div className="cc-tool-body">
+          {block.lines.map((raw, i) => {
+            if (!raw.trim()) return null;
+            return (
+              <div key={i} className="cc-line">
+                <AnsiText text={raw} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
 const AgentBubble = memo(function AgentBubble({
   msg,
   agentType,
@@ -36,7 +134,14 @@ const AgentBubble = memo(function AgentBubble({
   onExpand: () => void;
 }) {
   const lines = msg.lines ?? [];
-  const visible = collapsed ? lines.slice(0, COLLAPSE_AT) : lines;
+  const blocks = msg.blocks;
+  // When collapsed: show every thinking/tool block but cap prose to the first 2 text blocks.
+  let visibleBlocks: ChatBlock[] | undefined;
+  if (blocks) {
+    visibleBlocks = collapsed
+      ? [...blocks.filter((b) => b.kind !== 'text'), ...blocks.filter((b) => b.kind === 'text').slice(0, 2)]
+      : blocks;
+  }
   return (
     <div className="chat-msg agent">
       <div className="agent-avatar" aria-hidden>
@@ -48,24 +153,39 @@ const AgentBubble = memo(function AgentBubble({
           <span className="chat-time">{time(msg.ts)}</span>
         </div>
         <div className="chat-bubble agent-bubble">
-          {visible.length === 0 && <div className="cb-line empty" />}
-          {visible.map((text, i) => {
-            if (!text) return <div key={i} className="cb-line empty" />;
-            const segs = ansiToSegments(text);
-            return (
-              <div key={i} className="cb-line">
-                {segs.map((s, j) => (
-                  <span key={j} style={s.style}>
-                    {s.text}
-                  </span>
-                ))}
-              </div>
-            );
-          })}
-          {collapsed && (
-            <button className="cb-more" onClick={onExpand}>
-              Show all {lines.length} lines ▾
-            </button>
+          {blocks ? (
+            <>
+              {visibleBlocks!.map((b, i) => {                if (b.kind === 'text') return <TextBlock key={i} block={b} />;
+                if (b.kind === 'thinking') return <ThinkingBlock key={i} block={b} />;
+                return <ToolBlock key={i} block={b} />;
+              })}
+              {collapsed && lines.length > COLLAPSE_AT && (
+                <button className="cb-more" onClick={onExpand}>
+                  Show all {lines.length} lines ▾
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              {lines.slice(0, collapsed ? COLLAPSE_AT : undefined).map((text, i) => {
+                if (!text) return <div key={i} className="cb-line empty" />;
+                const segs = ansiToSegments(text);
+                return (
+                  <div key={i} className="cb-line">
+                    {segs.map((s, j) => (
+                      <span key={j} style={s.style}>
+                        {s.text}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })}
+              {collapsed && lines.length > COLLAPSE_AT && (
+                <button className="cb-more" onClick={onExpand}>
+                  Show all {lines.length} lines ▾
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

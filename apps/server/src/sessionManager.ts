@@ -19,7 +19,7 @@ import { AGENT_COMMANDS, classifyPane, deriveLabel, isKnownAgent, paneKey } from
 import { discoverGit } from './git.js';
 import { computeStatus } from './status.js';
 import { sanitizeLines, stripSgr } from './util.js';
-import { cleanChatLines } from './clean.js';
+import { cleanChatLines, segmentChatLines } from './clean.js';
 
 export interface SessionBus {
   sessions(sessions: SessionInfo[], approvals: ApprovalRequest[]): void;
@@ -182,7 +182,13 @@ export class SessionManager {
     const seedAgentLines = cleanChatLines(seedLines.slice(-300)).slice(-140);
     const firstAgent: ChatMessage | undefined =
       seedAgentLines.length > 0
-        ? { id: randomUUID(), role: 'agent', ts: Date.now(), lines: seedAgentLines }
+        ? {
+            id: randomUUID(),
+            role: 'agent',
+            ts: Date.now(),
+            lines: seedAgentLines,
+            blocks: segmentChatLines(seedAgentLines),
+          }
         : undefined;
     const ms: ManagedSession = {
       info: {
@@ -422,6 +428,7 @@ export class SessionManager {
       if (msg.lines!.length >= this.config.ringBufferSize) break;
       msg.lines!.push(l);
     }
+    msg.blocks = segmentChatLines(msg.lines!);
     ms.chatLastAppendAt = Date.now();
     if (ms.chat.length > 500) ms.chat.shift();
     this.bus.chatOutput(ms.info.id, msg);

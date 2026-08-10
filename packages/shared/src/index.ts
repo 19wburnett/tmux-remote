@@ -55,6 +55,12 @@ export interface TranscriptLine {
   text: string;
 }
 
+/** A classified run of agent output lines. */
+export type ChatBlock =
+  | { kind: 'text'; lines: string[] }
+  | { kind: 'thinking'; title?: string; lines: string[] }
+  | { kind: 'tool'; title: string; lines: string[] };
+
 /** One bubble in the chat view. */
 export interface ChatMessage {
   id: string;
@@ -64,6 +70,8 @@ export interface ChatMessage {
   text?: string;
   /** Agent messages: raw (ANSI) terminal output lines. */
   lines?: string[];
+  /** Classified blocks for agent messages (when available). */
+  blocks?: ChatBlock[];
 }
 
 /** Payload returned by the HTTP API when listing sessions. */
