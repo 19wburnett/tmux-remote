@@ -13,11 +13,11 @@ async function main(): Promise<void> {
   const tmux = new TmuxAdapter(config);
 
   const httpServer = http.createServer();
-  const bus = new WsServer(httpServer, config);
+  const bus = new WsServer(httpServer, config, store);
   const manager = new SessionManager(tmux, store, config, bus);
   bus.setManager(manager);
 
-  const app = createHttpApp(config, manager);
+  const app = createHttpApp(config, manager, store);
   httpServer.on('request', app);
 
   await manager.start();

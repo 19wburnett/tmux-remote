@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { SessionInfo } from '@claude-remote/shared';
 import { useApp } from '../provider';
+import { api } from '../api';
 import { timeAgo, truncate } from '../utils';
 import { Header } from './Header';
 import { Sheet } from './Sheet';
@@ -30,6 +31,7 @@ export function SessionList() {
   const [filter, setFilter] = useState<Filter>('all');
   const [menuOpen, setMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   const projects = useMemo(() => {
     const set = new Set<string>();
@@ -138,6 +140,9 @@ export function SessionList() {
           <button className="sheet-row" onClick={() => { setMenuOpen(false); void refreshSessions(); }}>
             <span className="icon">↻</span> Refresh sessions
           </button>
+          <button className="sheet-row" onClick={() => { setMenuOpen(false); setAccountOpen(true); }}>
+            <span className="icon">⚙</span> Change password / username
+          </button>
           <button className="sheet-row" onClick={() => { setMenuOpen(false); void logout(); }}>
             <span className="icon">⎋</span> Sign out
             <span className="sub">{hostname}</span>
@@ -146,6 +151,7 @@ export function SessionList() {
       )}
 
       {createOpen && <CreateSessionSheet onClose={() => setCreateOpen(false)} />}
+      {accountOpen && <AccountSheet onClose={() => setAccountOpen(false)} />}
     </>
   );
 }
@@ -240,6 +246,72 @@ function CreateSessionSheet({ onClose }: { onClose: () => void }) {
       />
       <button className="primary-btn" onClick={() => void submit()} disabled={busy}>
         {busy ? 'Starting…' : 'Start session'}
+      </button>
+    </Sheet>
+  );
+}
+
+function AccountSheet({ onClose }: { onClose: () => void }) {
+  const { username, setNotice } = useApp();
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newUsername, setNewUsername] = useState(username ?? '');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const canSave =
+    !busy && currentPassword.length > 0 && newPassword === confirm && (newPassword.length === 0 || newPassword.length >= 6);
+
+  const submit = async () => {
+    if (!canSave) return;
+    setBusy(true);
+    try {
+      const res = await api.changeCredentials(currentPassword, newUsername.trim() || undefined, newPassword || undefined);
+      setNotice(`Credentials updated — signed in as ${res.username}.`);
+      onClose();
+    } catch (e) {
+      setNotice((e as Error).message || 'update failed');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet title="Change password / username" onClose={onClose}>
+      <div className="sheet-hint">
+        Signed in as <b>{username}</b>. Enter your current password, then set a new username and/or password.
+      </div>
+      <input
+        className="field"
+        placeholder="Current password"
+        type="password"
+        value={currentPassword}
+        onChange={(e) => setCurrentPassword(e.target.value)}
+      />
+      <input
+        className="field"
+        placeholder="New username"
+        autoCapitalize="none"
+        autoCorrect="off"
+        value={newUsername}
+        onChange={(e) => setNewUsername(e.target.value)}
+      />
+      <input
+        className="field"
+        placeholder="New password (optional, 6+ chars)"
+        type="password"
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+      />
+      <input
+        className="field"
+        placeholder="Confirm new password"
+        type="password"
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+      />
+      {newPassword !== confirm && <div className="sheet-hint" style={{ color: 'var(--red)' }}>Passwords do not match.</div>}
+      <button className="primary-btn" onClick={() => void submit()} disabled={!canSave}>
+        {busy ? 'Saving…' : 'Save changes'}
       </button>
     </Sheet>
   );

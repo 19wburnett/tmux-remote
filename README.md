@@ -100,8 +100,8 @@ your panes behave exactly as if you'd typed at the terminal.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `HOST` / `PORT` | `0.0.0.0` / `8787` | listen address |
-| `AUTH_USERNAME` | `admin` | app login |
-| `AUTH_PASSWORD` | `changeme` | **change this** |
+| `AUTH_USERNAME` | `admin` | app login (bootstrap default) |
+| `AUTH_PASSWORD` | `changeme` | **change this** (bootstrap default) |
 | `AUTH_SECRET` | generated | token signing secret (persisted in data dir) |
 | `DATA_DIR` | `~/.claude-remote/data` | SQLite metadata + logs |
 | `POLL_MS` | `1000` | tmux poll interval |
@@ -119,6 +119,13 @@ your panes behave exactly as if you'd typed at the terminal.
 - No unauthenticated raw-terminal endpoint exists. `xterm.js` runs entirely
   client-side against the authenticated API.
 - Secrets live in env vars / `~/.claude-remote/env` (see `.env.example`).
+- Once you change the password/username in-app, those credentials are stored
+  scrypt-hashed in the SQLite store and override the env defaults. Every
+  credential change bumps a version that invalidates all existing sessions.
+- **Forgot your password?** From the login screen tap *Forgot password?*, then
+  on the server run `cat ~/.claude-remote/data/reset-token` (or check the
+  journal for `password reset token`) to get the one-time token. It expires
+  after 30 minutes and can only be read by the machine operator.
 
 ## Project layout
 

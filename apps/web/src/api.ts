@@ -46,6 +46,11 @@ export const api = {
     req<{ ok: boolean; username: string }>('/api/auth/login', 'POST', { username, password }),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', 'POST'),
   me: () => req<AuthStatus>('/api/auth/me'),
+  forgotPassword: () => req<{ ok: boolean; hint: string }>('/api/auth/forgot', 'POST'),
+  resetPassword: (token: string, username: string, password: string) =>
+    req<{ ok: boolean; username: string }>('/api/auth/reset', 'POST', { token, username, password }),
+  changeCredentials: (currentPassword: string, newUsername?: string, newPassword?: string) =>
+    req<{ ok: boolean; username: string }>('/api/auth/change', 'POST', { currentPassword, newUsername, newPassword }),
   health: () => req<{ ok: boolean }>('/api/health'),
 
   listSessions: () => req<SessionListResponse>('/api/sessions'),

@@ -3,9 +3,21 @@ import { join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { CommandInput, KeysInput, SendInput, SessionCreateInput, SessionPatchInput } from '@claude-remote/shared';
-import { COOKIE_NAME, createToken, sessionCookieValue, tokenFromRequest, verifyCredentials, verifyToken } from './auth.js';
+import {
+  COOKIE_NAME,
+  consumeResetToken,
+  createResetToken,
+  createToken,
+  credentialVersion,
+  sessionCookieValue,
+  setCredentials,
+  tokenFromRequest,
+  verifyCredentials,
+  verifyToken,
+} from './auth.js';
 import type { AppConfig } from './config.js';
 import type { SessionManager } from './sessionManager.js';
+import type { Store } from './store.js';
 import { VERSION } from './version.js';
 
 type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void> | void;
@@ -16,13 +28,13 @@ function ah(fn: AsyncHandler): AsyncHandler {
   };
 }
 
-function authMiddleware(config: AppConfig) {
+function authMiddleware(config: AppConfig, store: Store) {
   return (req: Request, res: Response, next: NextFunction) => {
     const token = tokenFromRequest(
       { cookie: req.headers.cookie },
       { token: (req.query.token as string) ?? undefined },
     );
-    const session = verifyToken(config, token);
+    const session = verifyToken(config, token, credentialVersion(store));
     if (!session) {
       res.status(401).json({ error: 'unauthorized' });
       return;
@@ -32,18 +44,18 @@ function authMiddleware(config: AppConfig) {
   };
 }
 
-export function createHttpApp(config: AppConfig, manager: SessionManager): Express {
+export function createHttpApp(config: AppConfig, manager: SessionManager, store: Store): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
 
   app.post('/api/auth/login', (req, res) => {
     const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
-    if (!verifyCredentials(config, username ?? '', password ?? '')) {
+    if (!verifyCredentials(config, store, username ?? '', password ?? '')) {
       res.status(401).json({ error: 'invalid credentials' });
       return;
     }
-    const token = createToken(config, String(username));
+    const token = createToken(config, String(username), credentialVersion(store));
     const secure = req.header('x-forwarded-proto') === 'https';
     res.setHeader('Set-Cookie', sessionCookieValue(token, secure));
     res.json({ ok: true, username: String(username) });
@@ -54,13 +66,47 @@ export function createHttpApp(config: AppConfig, manager: SessionManager): Expre
     res.json({ ok: true });
   });
 
+  // One-time reset token. Never returned over HTTP: written to a file in the
+  // data dir and printed to the server log so only the machine operator can
+  // read it (out-of-band recovery).
+  app.post('/api/auth/forgot', (req, res) => {
+    const token = createResetToken(store, config.dataDir);
+    console.log(`[claude-remote] password reset token (valid 30 min): ${token}`);
+    res.json({ ok: true, hint: 'written to <dataDir>/reset-token and the server log' });
+  });
+
+  // Consume the one-time token to set a new username + password.
+  app.post(
+    '/api/auth/reset',
+    ah(async (req, res) => {
+      const { token, username, password } = (req.body ?? {}) as {
+        token?: string;
+        username?: string;
+        password?: string;
+      };
+      if (!username || !password || password.length < 6) {
+        res.status(400).json({ error: 'username and a password of at least 6 characters are required' });
+        return;
+      }
+      if (!consumeResetToken(store, String(token ?? ''))) {
+        res.status(401).json({ error: 'invalid or expired reset token' });
+        return;
+      }
+      setCredentials(store, username.trim(), password);
+      const secure = req.header('x-forwarded-proto') === 'https';
+      const t = createToken(config, username.trim(), credentialVersion(store));
+      res.setHeader('Set-Cookie', sessionCookieValue(t, secure));
+      res.json({ ok: true, username: username.trim() });
+    }),
+  );
+
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tmux: true, version: VERSION, hostname: config.host, time: Date.now() });
   });
 
   app.get('/api/auth/me', (req, res) => {
     const token = tokenFromRequest({ cookie: req.headers.cookie }, { token: (req.query.token as string) ?? undefined });
-    const session = verifyToken(config, token);
+    const session = verifyToken(config, token, credentialVersion(store));
     if (!session) {
       res.status(401).json({ authenticated: false });
       return;
@@ -68,7 +114,39 @@ export function createHttpApp(config: AppConfig, manager: SessionManager): Expre
     res.json({ authenticated: true, username: session.username, hostname: config.host, version: VERSION });
   });
 
-  app.use('/api', authMiddleware(config));
+  app.use('/api', authMiddleware(config, store));
+
+  // Change password and/or username while authenticated (requires current password).
+  app.post(
+    '/api/auth/change',
+    ah(async (req, res) => {
+      const user = (req as Request & { user?: string }).user;
+      const { currentPassword, newPassword, newUsername } = (req.body ?? {}) as {
+        currentPassword?: string;
+        newPassword?: string;
+        newUsername?: string;
+      };
+      if (!currentPassword) {
+        res.status(400).json({ error: 'current password is required' });
+        return;
+      }
+      if (!verifyCredentials(config, store, user ?? '', currentPassword)) {
+        res.status(401).json({ error: 'current password is incorrect' });
+        return;
+      }
+      if (newPassword && newPassword.length < 6) {
+        res.status(400).json({ error: 'new password must be at least 6 characters' });
+        return;
+      }
+      const username = (newUsername && newUsername.trim()) || user || 'admin';
+      const password = newPassword && newPassword.length > 0 ? newPassword : currentPassword;
+      setCredentials(store, username, password);
+      const secure = req.header('x-forwarded-proto') === 'https';
+      const t = createToken(config, username, credentialVersion(store));
+      res.setHeader('Set-Cookie', sessionCookieValue(t, secure));
+      res.json({ ok: true, username });
+    }),
+  );
 
   app.get('/api/sessions', (_req, res) => {
     res.json({ sessions: manager.list(), approvals: manager.pendingApprovals() });

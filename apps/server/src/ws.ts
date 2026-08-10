@@ -2,8 +2,9 @@ import type { IncomingMessage, Server } from 'node:http';
 import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 import type { ApprovalRequest, ChatMessage, ClientMessage, SessionInfo, TranscriptLine } from '@claude-remote/shared';
-import { tokenFromRequest, verifyToken } from './auth.js';
+import { tokenFromRequest, verifyToken, credentialVersion } from './auth.js';
 import type { AppConfig } from './config.js';
+import type { Store } from './store.js';
 import type { SessionBus, SessionManager } from './sessionManager.js';
 import { VERSION } from './version.js';
 
@@ -17,7 +18,7 @@ export class WsServer implements SessionBus {
   private clients = new Set<WsClient>();
   private manager: SessionManager | undefined;
 
-  constructor(httpServer: Server, private config: AppConfig) {
+  constructor(httpServer: Server, private config: AppConfig, private store: Store) {
     this.wss = new WebSocketServer({ server: httpServer, path: '/ws' });
     this.wss.on('connection', (ws, req) => this.onConnection(ws, req));
   }
@@ -30,7 +31,7 @@ export class WsServer implements SessionBus {
     const cookieHeader = String(req.headers.cookie ?? '');
     const query = new URL(req.url ?? '/', 'http://localhost').searchParams;
     const token = tokenFromRequest({ cookie: cookieHeader }, { token: query.get('token') ?? undefined });
-    if (!verifyToken(this.config, token)) {
+    if (!verifyToken(this.config, token, credentialVersion(this.store))) {
       ws.close(4001, 'unauthorized');
       return;
     }
